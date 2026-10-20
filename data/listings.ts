@@ -133,7 +133,7 @@ export const listings: Listing[] = [
     pricePerNight: 36000,
     rating: 4.3,
     image:
-      "https://images.unsplash.com/photo-1600047509807-ba8f99d2cd00?w=800&q=80",
+      "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&q=80",
     category: "house",
     isPopular: true,
   },
@@ -217,7 +217,7 @@ export const listings: Listing[] = [
     pricePerNight: 31000,
     rating: 4.3,
     image:
-      "https://images.unsplash.com/photo-1600607687644-c7171b42498b?w=800&q=80",
+      "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&q=80",
     category: "house",
     isPopular: true,
   },
