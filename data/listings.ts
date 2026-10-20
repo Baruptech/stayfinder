@@ -1,6 +1,7 @@
 import { Listing } from "@/types";
 
 export const listings: Listing[] = [
+  // ===== Existing 8 =====
   {
     id: "1",
     title: "Indigo House",
@@ -118,6 +119,148 @@ export const listings: Listing[] = [
     image:
       "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=800&q=80",
     category: "house",
+    isNewOffer: true,
+  },
+
+  // ===== New 10 listings =====
+  {
+    id: "9",
+    title: "Kano Royal Residence",
+    location: "Kano, Kano State",
+    city: "Kano",
+    description:
+      "Traditional meets modern in this spacious residence in the heart of Kano. Close to the ancient city walls and markets.",
+    pricePerNight: 36000,
+    rating: 4.3,
+    image:
+      "https://images.unsplash.com/photo-1600047509807-ba8f99d2cd00?w=800&q=80",
+    category: "house",
+    isPopular: true,
+  },
+  {
+    id: "10",
+    title: "Jos Plateau Lodge",
+    location: "Jos, Plateau State",
+    city: "Jos",
+    description:
+      "Cool-climate getaway on the Jos Plateau. Enjoy fresh air, scenic views, and a peaceful atmosphere away from the city hustle.",
+    pricePerNight: 41000,
+    rating: 4.7,
+    image:
+      "https://images.unsplash.com/photo-1600585154526-990dced4db0d?w=800&q=80",
+    category: "house",
+    isNewOffer: true,
+  },
+  {
+    id: "11",
+    title: "Benin City Classic Apartment",
+    location: "Benin City, Edo State",
+    city: "Benin City",
+    description:
+      "Well-located apartment in the historic city of Benin. Walking distance to cultural sites and modern amenities.",
+    pricePerNight: 29000,
+    rating: 4.2,
+    image:
+      "https://images.unsplash.com/photo-1493809842364-78817add7ffb?w=800&q=80",
+    category: "apartment",
+    isPopular: true,
+  },
+  {
+    id: "12",
+    title: "Uyo Garden Suite",
+    location: "Uyo, Akwa Ibom State",
+    city: "Uyo",
+    description:
+      "Bright and airy suite with a private garden. Perfect base for exploring Uyo and the surrounding natural attractions.",
+    pricePerNight: 34000,
+    rating: 4.6,
+    image:
+      "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80",
+    category: "apartment",
+    isNewOffer: true,
+  },
+  {
+    id: "13",
+    title: "Abeokuta Rock View Home",
+    location: "Abeokuta, Ogun State",
+    city: "Abeokuta",
+    description:
+      "Charming home with views of the famous Olumo Rock. Quiet neighborhood with easy access to the city center.",
+    pricePerNight: 37000,
+    rating: 4.5,
+    image:
+      "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80",
+    category: "house",
+    isPopular: true,
+  },
+  {
+    id: "14",
+    title: "Asaba Riverside Apartment",
+    location: "Asaba, Delta State",
+    city: "Asaba",
+    description:
+      "Modern apartment overlooking the River Niger. Clean, secure, and ideal for both short and extended stays.",
+    pricePerNight: 33000,
+    rating: 4.4,
+    image:
+      "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80",
+    category: "apartment",
+    isNewOffer: true,
+  },
+  {
+    id: "15",
+    title: "Owerri Green Estate",
+    location: "Owerri, Imo State",
+    city: "Owerri",
+    description:
+      "Comfortable family-friendly house in a green estate. Spacious rooms, reliable power, and a welcoming atmosphere.",
+    pricePerNight: 31000,
+    rating: 4.3,
+    image:
+      "https://images.unsplash.com/photo-1600607687644-c7171b42498b?w=800&q=80",
+    category: "house",
+    isPopular: true,
+  },
+  {
+    id: "16",
+    title: "Kaduna Central Loft",
+    location: "Kaduna, Kaduna State",
+    city: "Kaduna",
+    description:
+      "Stylish loft-style apartment in central Kaduna. Open-plan living with contemporary finishes and city convenience.",
+    pricePerNight: 28000,
+    rating: 4.1,
+    image:
+      "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&q=80",
+    category: "apartment",
+    isNewOffer: true,
+  },
+  {
+    id: "17",
+    title: "Akure Hilltop Villa",
+    location: "Akure, Ondo State",
+    city: "Akure",
+    description:
+      "Hilltop villa with cool breezes and beautiful surroundings. Great for relaxation and family gatherings.",
+    pricePerNight: 40000,
+    rating: 4.6,
+    image:
+      "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=80",
+    category: "house",
+    isPopular: true,
+  },
+  {
+    id: "18",
+    title: "Warri Executive Suite",
+    location: "Warri, Delta State",
+    city: "Warri",
+    description:
+      "Executive suite designed for comfort and productivity. Fully equipped and located in a secure part of Warri.",
+    pricePerNight: 36000,
+    rating: 4.4,
+    image:
+      "https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=800&q=80",
+    category: "apartment",
     isNewOffer: true,
   },
 ];
