@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useFlutterwave, closePaymentModal } from "flutterwave-react-v3";
 import { Listing } from "@/types";
 
 const DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -24,6 +25,38 @@ export default function BookingForm({ listing }: BookingFormProps) {
   const [adults, setAdults] = useState(2);
   const [children, setChildren] = useState(2);
 
+  // Calculate number of nights
+  const nights =
+    selectedDates.length === 2
+      ? selectedDates[1] - selectedDates[0]
+      : selectedDates.length === 1
+      ? 1
+      : 0;
+
+  const totalAmount = nights * listing.pricePerNight;
+
+  // Flutterwave config - ONLY public key here
+  const config = {
+    public_key: "FLWPUBK_TEST-aa438f2fb0f5993ec72ced12227e05f2-X",
+    tx_ref: `stayfinder-${Date.now()}`,
+    amount: totalAmount,
+    currency: "NGN",
+    payment_options: "card,ussd,banktransfer",
+    customer: {
+      email: "guest@stayfinder.com",
+      phone_number: "08000000000",
+      name: "StayFinder Guest",
+    },
+    customizations: {
+      title: "StayFinder",
+      description: `Booking for ${listing.title} (${nights} night${nights > 1 ? "s" : ""})`,
+      logo: "https://stayfinder-rho-six.vercel.app/icon-192.png",
+    },
+  };
+
+  const handleFlutterPayment = useFlutterwave(config);
+
+  // Calendar helpers
   const getDaysInMonth = (month: number, year: number) =>
     new Date(year, month + 1, 0).getDate();
 
@@ -75,6 +108,98 @@ export default function BookingForm({ listing }: BookingFormProps) {
       return `${selectedDates[0]} ${MONTHS[currentMonth].slice(0, 3)} ${currentYear}`;
     return `${selectedDates[0]}-${selectedDates[1]} ${MONTHS[currentMonth].slice(0, 3)} ${currentYear}`;
   };
+
+
+    const handleBookNow = () => {
+  if (nights < 1) {
+    alert("Please select at least one night (start and end date).");
+    return;
+  }
+
+  handleFlutterPayment({
+    callback: (response: any) => {
+      console.log("Payment response:", response); // ← keep this for debugging
+
+      // Treat as success if Flutterwave gave us a transaction id
+      // or if status looks successful
+      const isSuccess =
+        response?.status === "successful" ||
+        response?.status === "success" ||
+        response?.status === "completed" ||
+        !!response?.transaction_id ||
+        !!response?.id;
+
+      if (isSuccess) {
+        const receiptData = {
+          listingTitle: listing.title,
+          location: listing.location,
+          nights,
+          adults,
+          children,
+          totalAmount,
+          transactionId:
+            response.transaction_id ||
+            response.id ||
+            response.flw_ref ||
+            "N/A",
+          txRef: response.tx_ref || config.tx_ref,
+          dateRange: formatSelectedRange(),
+          paymentDate: new Date().toLocaleString(),
+        };
+
+        try {
+          localStorage.setItem(
+            "stayfinder_receipt",
+            JSON.stringify(receiptData)
+          );
+          sessionStorage.setItem(
+            "stayfinder_receipt",
+            JSON.stringify(receiptData)
+          );
+        } catch (err) {
+          console.error("Could not save receipt:", err);
+        }
+
+        closePaymentModal();
+
+
+        // ... after creating receiptData
+
+// Save as the latest receipt (for the receipt page)
+localStorage.setItem("stayfinder_receipt", JSON.stringify(receiptData));
+sessionStorage.setItem("stayfinder_receipt", JSON.stringify(receiptData));
+
+// Also keep a list of all bookings for the Notifications page
+try {
+  const existing = localStorage.getItem("stayfinder_bookings");
+  let list = existing ? JSON.parse(existing) : [];
+  // Prevent exact duplicates
+  list = list.filter(
+    (b: any) => b.transactionId !== receiptData.transactionId
+  );
+  list.unshift(receiptData); // newest first
+  // Optional: keep only the last 20
+  list = list.slice(0, 20);
+  localStorage.setItem("stayfinder_bookings", JSON.stringify(list));
+} catch (e) {
+  console.error("Could not update bookings list", e);
+}
+
+        // Give the modal a moment to close
+        setTimeout(() => {
+          router.push("/receipt");
+        }, 500);
+      } else {
+        closePaymentModal();
+        console.warn("Payment failed or cancelled. Full response:", response);
+        alert("Payment was not successful. Please try again.");
+      }
+    },
+    onClose: () => {
+      console.log("Payment modal closed by user");
+    },
+  });
+};
 
   return (
     <div className="min-h-screen bg-white max-w-md mx-auto flex flex-col">
@@ -159,7 +284,7 @@ export default function BookingForm({ listing }: BookingFormProps) {
         </div>
 
         {/* Guests Section */}
-        <div>
+        <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-gray-900">Guests</h2>
             <button
@@ -208,19 +333,37 @@ export default function BookingForm({ listing }: BookingFormProps) {
             </div>
           </div>
         </div>
+
+        {/* Price Summary */}
+        {nights > 0 && (
+          <div className="bg-gray-50 rounded-2xl p-4 mb-6">
+            <div className="flex justify-between text-sm mb-2">
+              <span className="text-gray-600">
+                #{listing.pricePerNight.toLocaleString()} × {nights} night
+                {nights > 1 ? "s" : ""}
+              </span>
+              <span className="font-medium">
+                #{totalAmount.toLocaleString()}
+              </span>
+            </div>
+            <div className="flex justify-between text-base font-semibold border-t border-gray-200 pt-2">
+              <span>Total</span>
+              <span>#{totalAmount.toLocaleString()}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Book Now button */}
       <div className="px-4 pb-6 pt-2">
         <button
-          onClick={() => {
-            alert(
-              `Booking ${listing.title}\nDates: ${formatSelectedRange()}\nAdults: ${adults}, Children: ${children}`
-            );
-          }}
-          className="w-full bg-black text-white text-center py-3.5 rounded-full font-medium text-base shadow-lg active:scale-[0.98] transition-transform"
+          onClick={handleBookNow}
+          disabled={nights < 1}
+          className="w-full bg-black text-white text-center py-3.5 rounded-full font-medium text-base shadow-lg active:scale-[0.98] transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Book Now
+          {nights < 1
+            ? "Select dates to book"
+            : `Pay #${totalAmount.toLocaleString()} Now`}
         </button>
       </div>
     </div>
