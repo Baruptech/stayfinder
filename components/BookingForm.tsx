@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useFlutterwave, closePaymentModal } from "flutterwave-react-v3";
-import RemitaPayment from "react-remita";
 import { Listing } from "@/types";
 
 const DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -13,11 +12,16 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
+// Extend Window so TypeScript knows about Remita
+declare global {
+  interface Window {
+    RmPaymentEngine?: any;
+  }
+}
+
 interface BookingFormProps {
   listing: Listing;
 }
-
-type PaymentMethod = "flutterwave" | "remita";
 
 export default function BookingForm({ listing }: BookingFormProps) {
   const router = useRouter();
@@ -27,7 +31,7 @@ export default function BookingForm({ listing }: BookingFormProps) {
   const [selectedDates, setSelectedDates] = useState<number[]>([14, 16]);
   const [adults, setAdults] = useState(2);
   const [children, setChildren] = useState(2);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("flutterwave");
+  const [remitaReady, setRemitaReady] = useState(false);
 
   const nights =
     selectedDates.length === 2
@@ -38,8 +42,27 @@ export default function BookingForm({ listing }: BookingFormProps) {
 
   const totalAmount = nights * listing.pricePerNight;
 
-  // ========== FLUTTERWAVE (unchanged) ==========
-  const config = {
+  // Load Remita official script
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const scriptId = "remita-inline-script";
+    if (document.getElementById(scriptId)) {
+      setRemitaReady(true);
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id = scriptId;
+    script.src = "https://demo.remita.net/payment/v1/remita-pay-inline.bundle.js";
+    script.async = true;
+    script.onload = () => setRemitaReady(true);
+    script.onerror = () => console.error("Failed to load Remita script");
+    document.body.appendChild(script);
+  }, []);
+
+  // ========== Flutterwave ==========
+  const flutterwaveConfig = {
     public_key: "FLWPUBK_TEST-aa438f2fb0f5993ec72ced12227e05f2-X",
     tx_ref: `stayfinder-${Date.now()}`,
     amount: totalAmount,
@@ -57,67 +80,124 @@ export default function BookingForm({ listing }: BookingFormProps) {
     },
   };
 
-  const handleFlutterPayment = useFlutterwave(config);
+  const handleFlutterPayment = useFlutterwave(flutterwaveConfig);
 
-  // ========== REMITA ==========
-  const remitaData = {
-    key: "pk_test_6V6gnE4ExVEDp7yMF4f1dPkqjEgaSo8JgF49KYoqAlRGnWCMalUVP56A7jtqTCi6", // public key only
-    customerId: "guest@stayfinder.com",
-    firstName: "StayFinder",
-    lastName: "Guest",
-    email: "guest@stayfinder.com",
-    amount: totalAmount,
-    narration: `Booking for ${listing.title} (${nights} night${nights > 1 ? "s" : ""})`,
-    onSuccess: function (response: any) {
-      console.log("Remita success:", response);
+  // ========== Shared success handler ==========
+  const saveReceiptAndGo = (transactionId: string, provider: string) => {
+    const receiptData = {
+      listingTitle: listing.title,
+      location: listing.location,
+      nights,
+      adults,
+      children,
+      totalAmount,
+      transactionId: transactionId || "N/A",
+      txRef: `stayfinder-${Date.now()}`,
+      dateRange: formatSelectedRange(),
+      paymentDate: new Date().toLocaleString(),
+      provider,
+    };
 
-      const receiptData = {
-        listingTitle: listing.title,
-        location: listing.location,
-        nights,
-        adults,
-        children,
-        totalAmount,
-        transactionId:
-          response?.paymentReference ||
-          response?.transactionId ||
-          response?.rrr ||
-          "N/A",
-        txRef: response?.transactionId || `remita-${Date.now()}`,
-        dateRange: formatSelectedRange(),
-        paymentDate: new Date().toLocaleString(),
-      };
+    try {
+      localStorage.setItem("stayfinder_receipt", JSON.stringify(receiptData));
+      sessionStorage.setItem("stayfinder_receipt", JSON.stringify(receiptData));
 
-      try {
-        localStorage.setItem("stayfinder_receipt", JSON.stringify(receiptData));
-        sessionStorage.setItem("stayfinder_receipt", JSON.stringify(receiptData));
+      const existing = localStorage.getItem("stayfinder_bookings");
+      let list = existing ? JSON.parse(existing) : [];
+      list = list.filter((b: any) => b.transactionId !== receiptData.transactionId);
+      list.unshift(receiptData);
+      list = list.slice(0, 20);
+      localStorage.setItem("stayfinder_bookings", JSON.stringify(list));
+    } catch (err) {
+      console.error("Could not save receipt:", err);
+    }
 
-        const existing = localStorage.getItem("stayfinder_bookings");
-        let list = existing ? JSON.parse(existing) : [];
-        list = list.filter(
-          (b: any) => b.transactionId !== receiptData.transactionId
-        );
-        list.unshift(receiptData);
-        list = list.slice(0, 20);
-        localStorage.setItem("stayfinder_bookings", JSON.stringify(list));
-      } catch (err) {
-        console.error("Could not save receipt:", err);
-      }
-
-      setTimeout(() => {
-        router.push("/receipt");
-      }, 500);
-    },
-    onError: function (response: any) {
-      console.log("Remita error:", response);
-      alert("Payment was not successful. Please try again.");
-    },
-    onClose: function () {
-      console.log("Remita modal closed");
-    },
+    setTimeout(() => {
+      window.location.href = "/receipt";
+    }, 400);
   };
 
-  // ========== Helpers ==========
+  // ========== Pay with Flutterwave ==========
+  const payWithFlutterwave = () => {
+    if (nights < 1) {
+      alert("Please select at least one night.");
+      return;
+    }
+
+    handleFlutterPayment({
+      callback: (response: any) => {
+        console.log("Flutterwave response:", response);
+
+        const isSuccess =
+          response?.status === "successful" ||
+          response?.status === "success" ||
+          response?.status === "completed" ||
+          !!response?.transaction_id ||
+          !!response?.id;
+
+        if (isSuccess) {
+          closePaymentModal();
+          saveReceiptAndGo(
+            response.transaction_id || response.id || response.flw_ref || "N/A",
+            "Flutterwave"
+          );
+        } else {
+          closePaymentModal();
+          alert("Payment was not successful. Please try again.");
+        }
+      },
+      onClose: () => console.log("Flutterwave modal closed"),
+    });
+  };
+
+  // ========== Pay with Remita ==========
+  const payWithRemita = () => {
+    if (nights < 1) {
+      alert("Please select at least one night.");
+      return;
+    }
+
+    if (!window.RmPaymentEngine) {
+      alert("Remita is still loading. Please try again in a few seconds.");
+      return;
+    }
+
+    try {
+      const paymentEngine = window.RmPaymentEngine.init({
+        key: "pk_test_6V6gnE4ExVEDp7yMF4f1dPkqjEgaSo8JgF49KYoqAlRGnWCMalUVP56A7jtqTCi6",
+        processRrr: false,
+        transactionId: Math.floor(Math.random() * 1101233).toString(),
+        amount: totalAmount,
+        email: "guest@stayfinder.com",
+        firstName: "StayFinder",
+        lastName: "Guest",
+        narration: `Booking for ${listing.title} - ${nights} night(s)`,
+        onSuccess: (response: any) => {
+          console.log("Remita success:", response);
+          const txId =
+            response?.paymentReference ||
+            response?.transactionId ||
+            response?.rrr ||
+            "N/A";
+          saveReceiptAndGo(txId, "Remita");
+        },
+        onError: (response: any) => {
+          console.error("Remita error:", response);
+          alert("Remita payment failed. Please try again.");
+        },
+        onClose: () => {
+          console.log("Remita modal closed");
+        },
+      });
+
+      paymentEngine.showPaymentWidget();
+    } catch (err) {
+      console.error("Remita init error:", err);
+      alert("Could not start Remita payment. Please try Flutterwave instead.");
+    }
+  };
+
+  // ========== Calendar helpers ==========
   const getDaysInMonth = (month: number, year: number) =>
     new Date(year, month + 1, 0).getDate();
 
@@ -147,12 +227,8 @@ export default function BookingForm({ listing }: BookingFormProps) {
 
   const toggleDate = (day: number) => {
     setSelectedDates((prev) => {
-      if (prev.includes(day)) {
-        return prev.filter((d) => d !== day);
-      }
-      if (prev.length >= 2) {
-        return [day];
-      }
+      if (prev.includes(day)) return prev.filter((d) => d !== day);
+      if (prev.length >= 2) return [day];
       return [...prev, day].sort((a, b) => a - b);
     });
   };
@@ -168,75 +244,6 @@ export default function BookingForm({ listing }: BookingFormProps) {
     if (selectedDates.length === 1)
       return `${selectedDates[0]} ${MONTHS[currentMonth].slice(0, 3)} ${currentYear}`;
     return `${selectedDates[0]}-${selectedDates[1]} ${MONTHS[currentMonth].slice(0, 3)} ${currentYear}`;
-  };
-
-  const handleFlutterBookNow = () => {
-    if (nights < 1) {
-      alert("Please select at least one night (start and end date).");
-      return;
-    }
-
-    handleFlutterPayment({
-      callback: (response: any) => {
-        console.log("Payment response:", response);
-
-        const isSuccess =
-          response?.status === "successful" ||
-          response?.status === "success" ||
-          response?.status === "completed" ||
-          !!response?.transaction_id ||
-          !!response?.id;
-
-        if (isSuccess) {
-          const receiptData = {
-            listingTitle: listing.title,
-            location: listing.location,
-            nights,
-            adults,
-            children,
-            totalAmount,
-            transactionId:
-              response.transaction_id || response.id || response.flw_ref || "N/A",
-            txRef: response.tx_ref || config.tx_ref,
-            dateRange: formatSelectedRange(),
-            paymentDate: new Date().toLocaleString(),
-          };
-
-          try {
-            localStorage.setItem(
-              "stayfinder_receipt",
-              JSON.stringify(receiptData)
-            );
-            sessionStorage.setItem(
-              "stayfinder_receipt",
-              JSON.stringify(receiptData)
-            );
-
-            const existing = localStorage.getItem("stayfinder_bookings");
-            let list = existing ? JSON.parse(existing) : [];
-            list = list.filter(
-              (b: any) => b.transactionId !== receiptData.transactionId
-            );
-            list.unshift(receiptData);
-            list = list.slice(0, 20);
-            localStorage.setItem("stayfinder_bookings", JSON.stringify(list));
-          } catch (err) {
-            console.error("Could not save receipt:", err);
-          }
-
-          closePaymentModal();
-          setTimeout(() => {
-            router.push("/receipt");
-          }, 500);
-        } else {
-          closePaymentModal();
-          alert("Payment was not successful. Please try again.");
-        }
-      },
-      onClose: () => {
-        console.log("Payment modal closed");
-      },
-    });
   };
 
   return (
@@ -256,7 +263,7 @@ export default function BookingForm({ listing }: BookingFormProps) {
 
       {/* Content */}
       <div className="flex-1 px-4 py-5 overflow-y-auto">
-        {/* Dates Section */}
+        {/* Dates */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-gray-900">Dates</h2>
@@ -279,10 +286,7 @@ export default function BookingForm({ listing }: BookingFormProps) {
 
           <div className="grid grid-cols-7 mb-2">
             {DAYS.map((day) => (
-              <div
-                key={day}
-                className="text-center text-[11px] font-medium text-gray-400 py-1"
-              >
+              <div key={day} className="text-center text-[11px] font-medium text-gray-400 py-1">
                 {day}
               </div>
             ))}
@@ -318,7 +322,7 @@ export default function BookingForm({ listing }: BookingFormProps) {
           </div>
         </div>
 
-        {/* Guests Section */}
+        {/* Guests */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-gray-900">Guests</h2>
@@ -332,14 +336,14 @@ export default function BookingForm({ listing }: BookingFormProps) {
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setAdults((v) => Math.max(1, v - 1))}
-                className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-50"
+                className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center"
               >
                 −
               </button>
               <span className="w-6 text-center text-sm font-medium">{adults}</span>
               <button
                 onClick={() => setAdults((v) => v + 1)}
-                className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-50"
+                className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center"
               >
                 +
               </button>
@@ -351,14 +355,14 @@ export default function BookingForm({ listing }: BookingFormProps) {
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setChildren((v) => Math.max(0, v - 1))}
-                className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-50"
+                className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center"
               >
                 −
               </button>
               <span className="w-6 text-center text-sm font-medium">{children}</span>
               <button
                 onClick={() => setChildren((v) => v + 1)}
-                className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-50"
+                className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center"
               >
                 +
               </button>
@@ -382,61 +386,36 @@ export default function BookingForm({ listing }: BookingFormProps) {
             </div>
           </div>
         )}
-
-        {/* Payment Method Selector */}
-        {nights > 0 && (
-          <div className="mb-6">
-            <h2 className="text-sm font-semibold text-gray-900 mb-3">
-              Choose payment method
-            </h2>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => setPaymentMethod("flutterwave")}
-                className={`py-3 rounded-xl text-sm font-medium border transition-colors ${
-                  paymentMethod === "flutterwave"
-                    ? "bg-black text-white border-black"
-                    : "bg-white text-gray-700 border-gray-200"
-                }`}
-              >
-                Flutterwave
-              </button>
-              <button
-                onClick={() => setPaymentMethod("remita")}
-                className={`py-3 rounded-xl text-sm font-medium border transition-colors ${
-                  paymentMethod === "remita"
-                    ? "bg-black text-white border-black"
-                    : "bg-white text-gray-700 border-gray-200"
-                }`}
-              >
-                Remita
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Payment Button */}
-      <div className="px-4 pb-6 pt-2">
+      {/* Payment Buttons */}
+      <div className="px-4 pb-6 pt-2 space-y-3">
         {nights < 1 ? (
           <button
             disabled
-            className="w-full bg-black text-white text-center py-3.5 rounded-full font-medium text-base opacity-50 cursor-not-allowed"
+            className="w-full bg-gray-300 text-gray-500 py-3.5 rounded-full font-medium"
           >
             Select dates to book
           </button>
-        ) : paymentMethod === "flutterwave" ? (
-          <button
-            onClick={handleFlutterBookNow}
-            className="w-full bg-black text-white text-center py-3.5 rounded-full font-medium text-base shadow-lg active:scale-[0.98] transition-transform"
-          >
-            Pay #{totalAmount.toLocaleString()} with Flutterwave
-          </button>
         ) : (
-          <RemitaPayment
-            remitaData={remitaData}
-            className="w-full bg-[#003366] text-white text-center py-3.5 rounded-full font-medium text-base shadow-lg"
-            text={`Pay #${totalAmount.toLocaleString()} with Remita`}
-          />
+          <>
+            <button
+              onClick={payWithFlutterwave}
+              className="w-full bg-black text-white py-3.5 rounded-full font-medium active:scale-[0.98] transition-transform"
+            >
+              Pay with Flutterwave — #{totalAmount.toLocaleString()}
+            </button>
+
+            <button
+              onClick={payWithRemita}
+              disabled={!remitaReady}
+              className="w-full bg-[#00A859] text-white py-3.5 rounded-full font-medium active:scale-[0.98] transition-transform disabled:opacity-60"
+            >
+              {remitaReady
+                ? `Pay with Remita — #${totalAmount.toLocaleString()}`
+                : "Loading Remita..."}
+            </button>
+          </>
         )}
       </div>
     </div>
